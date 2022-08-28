@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use crate::Stack;
 use extended_primitives::{Buffer, VarInt};
 use handshake_encoding::{Decodable, DecodingError, Encodable};
@@ -29,20 +31,21 @@ impl Witness {
         self.stack.set(index, data);
     }
 
-    pub fn var_size(&self) -> usize {
+    pub fn var_size(&self) -> u32 {
         let varint = VarInt::from(self.stack.len());
-        varint.encoded_size() as usize + self.size()
+        varint.encoded_size() + self.size()
     }
 }
 
 impl Encodable for Witness {
     //Does not include the varint of total items on the stack.
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         let mut size = 0;
 
         for item in self.stack.iter() {
             let varint = VarInt::from(item.len());
-            size += varint.encoded_size() as usize + item.len();
+            size += varint.encoded_size();
+            size += item.len() as u32;
         }
 
         size

@@ -37,11 +37,11 @@ pub struct Bloom {
 
 impl Encodable for Bloom {
     //TODO really need to double check this.
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         let mut size = 0;
         let length = VarInt::from(self.filter.filter.len() as u64);
-        size += length.encoded_size() as usize;
-        size += self.filter.filter.len();
+        size += length.encoded_size();
+        size += self.filter.filter.len() as u32;
         size += 9;
         size
     }

@@ -15,7 +15,7 @@ pub struct Block {
 }
 
 impl Encodable for Block {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         //TODO relies on tx's get size which is not done.
         32
     }

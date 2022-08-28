@@ -23,7 +23,7 @@ impl Outpoint {
 }
 
 impl Encodable for Outpoint {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         //32 (txid) + 4 (index)
         36
     }

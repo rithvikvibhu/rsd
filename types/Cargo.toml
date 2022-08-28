@@ -7,7 +7,7 @@ license = "MIT"
 description = "Handshake types"
 
 [features]
-default = []
+default = ["bloom"]
 
 # The only reason we put PDS behind a feature right is now is that it requires static linking to c++ libraries.
 # This breaks some builds on CI, so I'm going to feature flag this for now, until we can get a murmur3 impl in Rust

@@ -171,7 +171,7 @@ impl BlockHeader {
 }
 
 impl Encodable for BlockHeader {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         //Put this into consensus TODO
         236
     }
@@ -261,10 +261,10 @@ mod tests {
     fn test_block_header_hex_default() {
         let block_header = BlockHeader::default();
 
-         let hex = block_header.to_hex();
-         // 212 bytes, multiply by 2 since building a String from 0s
-         let expect = String::from_utf8(vec![b'0'; 212 * 2]).unwrap();
-         assert_eq!(hex, expect)
+        let hex = block_header.to_hex();
+        // 212 bytes, multiply by 2 since building a String from 0s
+        let expect = String::from_utf8(vec![b'0'; 212 * 2]).unwrap();
+        assert_eq!(hex, expect)
     }
 
     #[test]
@@ -280,11 +280,15 @@ mod tests {
             bits: 0,
             extra_nonce: Default::default(),
             nonce: 1,
-            mask: Default::default()
+            mask: Default::default(),
         };
 
         let hex = block_header.to_hex();
-        let expect = format!("{}{}", "01", String::from_utf8(vec![b'0'; 211 * 2]).unwrap());
+        let expect = format!(
+            "{}{}",
+            "01",
+            String::from_utf8(vec![b'0'; 211 * 2]).unwrap()
+        );
         assert_eq!(hex, expect);
     }
 
@@ -324,9 +328,10 @@ mod tests {
         };
 
         let padding = block_header.padding(32);
-        let expected_padding = Buffer::from_hex("00000000000057919601ead28513e11afb2cb5d6b4f9ebb0e2a3eeae353d21ef").unwrap();
+        let expected_padding =
+            Buffer::from_hex("00000000000057919601ead28513e11afb2cb5d6b4f9ebb0e2a3eeae353d21ef")
+                .unwrap();
         assert_eq!(padding, expected_padding);
-
 
         let expected_subhead = Buffer::from_hex("27000000000000000000000098f5d2f557a4f9a23d4dcc250000000000000000000000000000000000000000000000000000000000000000fb442499ab4d7dc32240af3543194d9d4508ed71a461c5a37e902b7c6c626192a25e36543911eb25fb2f9c0187261ebce7bf71229aac631d74535fcd6750446300000000ea45011b").unwrap();
 
@@ -375,7 +380,9 @@ mod tests {
         };
 
         let share_hash = block_header.share_hash();
-        let expected_share_hash = Hash::from_hex("000000000000a250786f48a91224e9a8b1b12933466511959572860ab5d77fff").unwrap();
+        let expected_share_hash =
+            Hash::from_hex("000000000000a250786f48a91224e9a8b1b12933466511959572860ab5d77fff")
+                .unwrap();
         assert_eq!(expected_share_hash, share_hash);
 
         let pow = block_header.verify_pow();

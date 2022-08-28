@@ -2,7 +2,7 @@ use crate::error;
 use crate::types::{IdentityKey, RawIP, Services};
 // use crate::Result;
 use extended_primitives::Buffer;
-use handshake_protocol::encoding::{Decodable, Encodable};
+use handshake_encoding::{Decodable, Encodable};
 use handshake_types::Time;
 use std::convert::TryFrom;
 use std::net::{IpAddr, SocketAddr};
@@ -182,9 +182,9 @@ impl Encodable for NetAddress {
 }
 
 impl Decodable for NetAddress {
-    type Error = error::Error;
+    type Err = error::Error;
 
-    fn decode(buf: &mut Buffer) -> Result<NetAddress, Self::Error> {
+    fn decode(buf: &mut Buffer) -> Result<NetAddress, Self::Err> {
         //Don't like this -> See if we should just make our own time type that wraps this.
         let timestamp = Time::from(buf.read_u64()?);
         let services = Services::from_bits_truncate(buf.read_u32()?);
@@ -350,5 +350,4 @@ mod test {
         let addr = NetAddress::new(hostname.parse().unwrap(), [0; 33].into());
         assert_eq!(addr.get_group(), vec![2, 32, 1, 32, 1]);
     }
-
 }

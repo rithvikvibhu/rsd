@@ -82,7 +82,7 @@ impl cmp::PartialOrd for Time {
 //TODO impl From Datetime, SystemTime, Duration, and u64
 //
 impl Encodable for Time {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         8
     }
 

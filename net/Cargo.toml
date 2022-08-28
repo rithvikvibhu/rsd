@@ -8,6 +8,7 @@ edition = "2018"
 
 # Internal
 handshake-types = { path="../types" }
+handshake-encoding = { path="../encoding" }
 handshake-protocol = { path="../protocol" }
 handshake-primitives = {path="../primitives" }
 
@@ -22,9 +23,11 @@ hex = "0.3.2"
 bitflags = "1.1.0"
 romio = "0.3.0-alpha.8"
 #Remove this and move to dev, if we don't use async/await in the net lib. Otherwise make this optional like we do w/ brontide
-futures-preview = {version="=0.3.0-alpha.18", features = ["async-await", "nightly"] }
+#futures-preview = {version="=0.3.0-alpha.18", features = ["async-await", "nightly"] }
+futures = {version="=0.3.23", features = ["async-await"] }
 rand = "0.7"
 log = "0.4"
 fasthash = "0.4"
-futures-timer = "0.2.1"
+futures-timer = "1.0.2"
 juliex = "0.3.0-alpha.6"
+async-std = { version="1.2.0", features = ["attributes", "unstable"] }

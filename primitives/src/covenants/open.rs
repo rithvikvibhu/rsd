@@ -51,19 +51,19 @@ impl OpenCovenant {
 }
 
 impl Encodable for OpenCovenant {
-    fn size(&self) -> usize {
-        let mut size = VarInt::from(3 as u64).encoded_size() as usize;
+    fn size(&self) -> u32 {
+        let mut size = VarInt::from(3 as u64).encoded_size();
         let name_hash_length = VarInt::from(32 as u64);
         let height_length = VarInt::from(4 as u64);
         let name_length = VarInt::from(self.name.len() as u64);
 
         //@todo change encoded size to usize (I think);
-        size += name_hash_length.encoded_size() as usize;
-        size += height_length.encoded_size() as usize;
-        size += name_length.encoded_size() as usize;
+        size += name_hash_length.encoded_size();
+        size += height_length.encoded_size();
+        size += name_length.encoded_size();
         size += 32;
         size += 4;
-        size += self.name.len();
+        size += self.name.len() as u32;
 
         size
     }

@@ -79,14 +79,14 @@ impl Transaction {
 
         size += VarInt::from(self.outputs.len()).encoded_size() as usize;
         for output in self.outputs.iter() {
-            size += output.size();
+            size += output.size() as usize;
         }
 
         size += 4;
         size
     }
 
-    pub fn get_witness_size(&self) -> usize {
+    pub fn get_witness_size(&self) -> u32 {
         let mut size = 0;
 
         for input in &self.inputs {
@@ -115,7 +115,7 @@ impl ToHex for Transaction {
 
 impl Encodable for Transaction {
     //@todo this is going to be the "non-base size"
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         //TODO
         32
     }
@@ -202,10 +202,14 @@ mod test {
         let tx = Transaction::from_hex(hex).unwrap();
 
         let hash = tx.hash();
-        let expected = Hash::from_hex("baac577630d12c95c49cdf99e53e4e0c5b24f54501bbbc7524c76bb0ae52dac5").unwrap();
+        let expected =
+            Hash::from_hex("baac577630d12c95c49cdf99e53e4e0c5b24f54501bbbc7524c76bb0ae52dac5")
+                .unwrap();
         assert_eq!(hash, expected);
 
-        let expected_witness_hash = Hash::from_hex("4426bd7f4ddc952acbee69c533fd988e67e499b94398924a8c46fe7ea59961b9").unwrap();
+        let expected_witness_hash =
+            Hash::from_hex("4426bd7f4ddc952acbee69c533fd988e67e499b94398924a8c46fe7ea59961b9")
+                .unwrap();
         let witness_hash = tx.witness_hash();
         assert_eq!(witness_hash, expected_witness_hash);
     }

@@ -13,7 +13,7 @@ use std::net::AddrParseError;
 pub enum Error {
     Brontide(brontide::Error),
     Buffer(extended_primitives::BufferError),
-    Decoding(handshake_protocol::encoding::DecodingError),
+    Decoding(handshake_encoding::DecodingError),
     InvalidHostname(AddrParseError),
     Hex(hex::FromHexError),
     FutureIO(futures::io::Error),
@@ -36,8 +36,8 @@ impl From<futures::io::Error> for Error {
     }
 }
 
-impl From<handshake_protocol::encoding::DecodingError> for Error {
-    fn from(e: handshake_protocol::encoding::DecodingError) -> Self {
+impl From<handshake_encoding::DecodingError> for Error {
+    fn from(e: handshake_encoding::DecodingError) -> Self {
         Error::Decoding(e)
     }
 }

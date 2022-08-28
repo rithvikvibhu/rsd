@@ -1,3 +1,4 @@
+use futures::stream::{self, StreamExt};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 //TODO move these to first class imports.
@@ -47,23 +48,27 @@ impl PeerList {
         Ok(())
     }
 
-    pub fn get_connected(&self) -> Vec<Arc<Peer>> {
-        let mut peers = match self.list.write() {
-            Ok(peers) => peers,
-            Err(_) => return vec![],
-        };
+    // pub async fn get_connected(&self) -> Vec<Arc<Peer>> {
+    //     let mut peers = match self.list.write() {
+    //         Ok(peers) => peers,
+    //         Err(_) => return vec![],
+    //     };
 
-        let mut res: Vec<Arc<Peer>> = peers
-            .values()
-            .filter(|p| p.is_connected())
-            .cloned()
-            .collect();
+    //     let mut res: Vec<Arc<Peer>> = peers
+    //         .values()
+    //         .filter(|p| p.is_connected())
+    //         .cloned()
+    //         .collect();
 
-        //TODO optional shuffling of connected peers.
-        // 		res.shuffle(&mut thread_rng());
-        // 		res
-        res
-    }
+    //     // let mut res = stream::iter(peers.values())
+    //     //     .filter(|p| async { p.is_connected().await })
+    //     //     .collect();
+
+    //     //TODO optional shuffling of connected peers.
+    //     // 		res.shuffle(&mut thread_rng());
+    //     // 		res
+    //     res
+    // }
 
     pub fn set_loader_peer(&mut self, peer: Arc<Peer>) {
         self.loader = Some(peer);

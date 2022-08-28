@@ -1,5 +1,3 @@
-#![feature(async_await)]
-
 pub mod common;
 pub mod error;
 pub mod net_address;

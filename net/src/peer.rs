@@ -7,16 +7,17 @@ use std::net::SocketAddr;
 use crate::error::Error;
 use crate::types::{IdentityKey, Nonce, ProtocolVersion, Services};
 use crate::Result;
-use brontide::{BrontideStream, BrontideStreamBuilder};
+use brontide::{BrontideStream, BrontideBuilder};
 use chrono::{DateTime, Utc};
 use extended_primitives::Buffer;
 use futures::channel::mpsc::UnboundedSender;
 use futures::lock::Mutex;
 use futures::sink::SinkExt;
-use handshake_protocol::encoding::Encodable;
+use handshake_encoding::Encodable;
 use handshake_protocol::network::Network;
 use handshake_types::difficulty::Difficulty;
-use romio::TcpStream;
+// use romio::TcpStream;
+use async_std::net::TcpStream;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,7 +79,7 @@ pub struct Peer {
     //mspc or a oneshot channel to one async function that loops through all messages and then
     //reads and or writes to them.
     //ARC
-    pub brontide: Mutex<BrontideStream<TcpStream>>,
+    pub brontide: Mutex<BrontideStream>,
     //ARC
     pub network: Network,
     //Possibly combine state and live info into the same lock.
@@ -111,11 +112,13 @@ impl Peer {
         //TODO catch error, don't unwrap.
         let socket = TcpStream::connect(&addr.address).await.unwrap();
 
-        let mut stream = BrontideStreamBuilder::new(socket, key)
-            .connector(addr.key.as_array())
-            .build();
+        // let mut stream = BrontideStreamBuilder::new(socket, key)
+        //     .connector(addr.key.as_array())
+        //     .build();
 
-        stream.start().await?;
+        let mut stream = BrontideBuilder::new(key).accept(socket).await?;
+
+        // stream.start().await?;
 
         //TODO split the stream to readers and writers
         //TODO maybe should make these their own structs. BrontideReader, BrontideWriter
@@ -281,7 +284,7 @@ impl Peer {
         let now = Time::now();
 
         //Acquire ping stats lock
-        let stats = self.ping_stats.lock().await;
+        let mut stats = self.ping_stats.lock().await;
 
         if let Some(challenge_nonce) = stats.challenge {
             if nonce != challenge_nonce {
@@ -314,7 +317,7 @@ impl Peer {
 
     pub async fn handle_send_headers(&self) -> Result<()> {
         //Acquire send headers lock.
-        let prefer_headers = self.prefer_headers.lock().await;
+        let mut prefer_headers = self.prefer_headers.lock().await;
 
         if *prefer_headers {
             // info!("Peer sent a duplicate sendheaders {}", self.info.address);
@@ -401,7 +404,7 @@ impl Peer {
         //Acquire Brontide Lock TODO should just be writing lock.
         let mut brontide = self.brontide.lock().await;
 
-        brontide.write(packet.frame(self.network).to_vec()).await?;
+        brontide.write(&packet.frame(self.network).to_vec()).await?;
 
         Ok(())
     }
@@ -425,10 +428,10 @@ impl Peer {
         Ok(())
     }
 
-    pub fn is_connected(&self) -> bool {
-        let state = match self.state.read() {
-            Ok(state) => state,
-            Err(_) => return false,
+    pub async fn is_connected(&self) -> bool {
+        let state = match self.state.lock().await {
+            state => state,
+            _ => return false,
         };
 
         State::Connected == *state

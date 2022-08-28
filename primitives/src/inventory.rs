@@ -50,7 +50,7 @@ impl Inventory {
 }
 
 impl Encodable for Inventory {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         36
     }
 

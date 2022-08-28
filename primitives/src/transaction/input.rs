@@ -58,7 +58,7 @@ impl Input {
 }
 
 impl Encodable for Input {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         //prevout (36) + sequence (4)
         40
     }

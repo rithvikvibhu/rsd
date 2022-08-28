@@ -128,7 +128,7 @@ impl Pool {
             );
 
             //Sleep for 500 milliseconds
-            Delay::new(Duration::from_millis(500)).await?;
+            Delay::new(Duration::from_millis(500)).await;
 
             info!("Slept for 500ms!");
 

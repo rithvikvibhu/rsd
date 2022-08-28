@@ -76,8 +76,8 @@ impl FinalizeCovenant {
 }
 
 impl Encodable for FinalizeCovenant {
-    fn size(&self) -> usize {
-        let mut size = VarInt::from(7 as u64).encoded_size() as usize;
+    fn size(&self) -> u32 {
+        let mut size = VarInt::from(7 as u64).encoded_size();
         let name_hash_length = VarInt::from(32 as u64);
         let height_length = VarInt::from(4 as u64);
         let name_length = VarInt::from(self.name.len() as u64);
@@ -86,16 +86,16 @@ impl Encodable for FinalizeCovenant {
         let renewals_length = VarInt::from(4 as u64);
         let block_hash_length = VarInt::from(32 as u64);
 
-        size += name_hash_length.encoded_size() as usize;
-        size += height_length.encoded_size() as usize;
-        size += name_length.encoded_size() as usize;
-        size += flags_length.encoded_size() as usize;
-        size += renewals_length.encoded_size() as usize;
-        size += claimed_length.encoded_size() as usize;
-        size += block_hash_length.encoded_size() as usize;
+        size += name_hash_length.encoded_size();
+        size += height_length.encoded_size();
+        size += name_length.encoded_size();
+        size += flags_length.encoded_size();
+        size += renewals_length.encoded_size();
+        size += claimed_length.encoded_size();
+        size += block_hash_length.encoded_size();
         size += 32;
         size += 4;
-        size += self.name.len();
+        size += self.name.len() as u32;
         size += 1;
         size += 4;
         size += 4;

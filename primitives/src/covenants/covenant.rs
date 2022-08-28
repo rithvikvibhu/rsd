@@ -241,10 +241,10 @@ impl Decodable for Covenant {
 
 impl Encodable for Covenant {
     //@todo going to code this as getVarsize right now, can change later.
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         let mut size = 1;
         size += match self {
-            Covenant::None => VarInt::from(0 as u64).encoded_size() as usize,
+            Covenant::None => VarInt::from(0 as u64).encoded_size(),
             Covenant::Claim(claim) => claim.size(),
             Covenant::Open(open) => open.size(),
             Covenant::Bid(bid) => bid.size(),

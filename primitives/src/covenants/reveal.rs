@@ -47,16 +47,16 @@ impl RevealCovenant {
 }
 
 impl Encodable for RevealCovenant {
-    fn size(&self) -> usize {
-        let mut size = VarInt::from(3 as u64).encoded_size() as usize;
+    fn size(&self) -> u32 {
+        let mut size = VarInt::from(3 as u64).encoded_size();
         let name_hash_length = VarInt::from(32 as u64);
         let height_length = VarInt::from(4 as u64);
         //TODO double check this.
         let nonce_length = VarInt::from(32 as u64);
 
-        size += name_hash_length.encoded_size() as usize;
-        size += height_length.encoded_size() as usize;
-        size += nonce_length.encoded_size() as usize;
+        size += name_hash_length.encoded_size();
+        size += height_length.encoded_size();
+        size += nonce_length.encoded_size();
         size += 32;
         size += 4;
         size += 32;

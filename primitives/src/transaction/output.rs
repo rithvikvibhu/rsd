@@ -29,7 +29,7 @@ impl Output {
 }
 
 impl Encodable for Output {
-    fn size(&self) -> usize {
+    fn size(&self) -> u32 {
         8 + self.address.size() + self.covenant.size()
     }
 

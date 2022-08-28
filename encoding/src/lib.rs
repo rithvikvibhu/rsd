@@ -35,7 +35,7 @@ impl fmt::Display for DecodingError {
 }
 
 pub trait Encodable {
-    fn size(&self) -> usize;
+    fn size(&self) -> u32;
 
     fn encode(&self) -> Buffer;
 }

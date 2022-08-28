@@ -176,8 +176,8 @@ impl Decodable for Address {
 }
 
 impl Encodable for Address {
-    fn size(&self) -> usize {
-        1 + 1 + self.hash.len()
+    fn size(&self) -> u32 {
+        1 + 1 + self.hash.len() as u32
     }
 
     fn encode(&self) -> Buffer {

@@ -13,8 +13,8 @@ impl Claim {
 }
 
 impl Encodable for Claim {
-    fn size(&self) -> usize {
-        2 + self.blob.len()
+    fn size(&self) -> u32 {
+        2 + self.blob.len() as u32
     }
 
     fn encode(&self) -> Buffer {
