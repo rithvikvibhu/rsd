@@ -14,7 +14,7 @@ handshake-primitives = {path="../primitives" }
 
 # Known External
 extended-primitives = "0.3.4"
-brontide = { git="https://github.com/UrkelLabs/brontide", features = ["stream"] }
+brontide = { git="https://github.com/rithvikvibhu/brontide", features = ["stream"] }
 
 # Unknown External
 chrono = "0.4.0"
