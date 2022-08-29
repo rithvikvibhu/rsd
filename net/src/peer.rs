@@ -7,7 +7,7 @@ use std::net::SocketAddr;
 use crate::error::Error;
 use crate::types::{IdentityKey, Nonce, ProtocolVersion, Services};
 use crate::Result;
-use brontide::{BrontideStream, BrontideBuilder};
+use brontide::{BrontideStream, BrontideBuilder, PublicKey};
 use chrono::{DateTime, Utc};
 use extended_primitives::Buffer;
 use futures::channel::mpsc::UnboundedSender;
@@ -17,7 +17,6 @@ use handshake_encoding::Encodable;
 use handshake_protocol::network::Network;
 use handshake_types::difficulty::Difficulty;
 // use romio::TcpStream;
-use async_std::net::TcpStream;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,16 +108,16 @@ impl Peer {
         network: Network,
         tx: UnboundedSender<Packet>,
     ) -> Result<Peer> {
-        //TODO catch error, don't unwrap.
-        let socket = TcpStream::connect(&addr.address).await.unwrap();
+        println!("LOG: Peer connect: {:#?}", addr);
 
-        // let mut stream = BrontideStreamBuilder::new(socket, key)
-        //     .connector(addr.key.as_array())
-        //     .build();
+        let mut builder = BrontideBuilder::new(key);
+        let hostname = &addr.address.to_string();
+        println!("LOG: Peer connect: hostname: {:#?}", hostname);
+        let remote_public = PublicKey::from(addr.key.as_array());
+        println!("LOG: Peer connect: remote_public: {:#?}", remote_public);
 
-        let mut stream = BrontideBuilder::new(key).accept(socket).await?;
-
-        // stream.start().await?;
+        let stream = builder.connect(hostname, remote_public).await.unwrap();
+        println!("LOG: Peer connect: stream.");
 
         //TODO split the stream to readers and writers
         //TODO maybe should make these their own structs. BrontideReader, BrontideWriter

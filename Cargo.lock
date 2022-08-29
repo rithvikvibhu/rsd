@@ -806,7 +806,6 @@ dependencies = [
 name = "handshake-net"
 version = "0.1.0"
 dependencies = [
- "async-std",
  "base32",
  "bitflags",
  "brontide",

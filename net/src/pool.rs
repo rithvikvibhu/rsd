@@ -197,7 +197,7 @@ impl Pool {
             };
 
             //TODO remove
-            let address_connect: Option<NetAddress> = Some("ak2hy7feae2o5pfzsdzw3cxkxsu3lxypykcl6iphnup4adf2ply6a@138.68.61.31:13038".parse().unwrap());
+            let address_connect: Option<NetAddress> = Some("aorsxa4ylaacshipyjkfbvzfkh3jhh4yowtoqdt64nzemqtiw2whk@127.0.0.1:46806".parse().unwrap());
 
             if address_connect.is_none() {
                 //TODO another loop?
@@ -214,7 +214,7 @@ impl Pool {
                 //Might not want to throw the error here, and just continue.
                 let tx = self.tx.clone();
                 juliex::spawn(async move {
-                let mut peer = Peer::connect(address_connect.unwrap(), [1; 32], Network::Testnet, tx).await.unwrap();
+                let mut peer = Peer::connect(address_connect.unwrap(), [1; 32], Network::Regtest, tx).await.unwrap();
                     peer.handle_messages().await;
                 });
             }
@@ -454,6 +454,6 @@ mod tests {
         let pool = Pool::new(config).unwrap();
         //TODO after a timeout, trigger the stop state.
 
-        block_on(async { pool.start().await});
+        // block_on(async { pool.start().await});
     }
 }
