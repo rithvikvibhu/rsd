@@ -1,5 +1,5 @@
 use crate::net_address::NetAddress;
-use crate::packets::{Packet, PingPacket, PongPacket, VersionPacket};
+use crate::packets::{Packet, PingPacket, PongPacket, VersionPacket, VerackPacket};
 use handshake_types::Time;
 use log::warn;
 use std::io::{Write, Read};
@@ -159,13 +159,13 @@ impl Peer {
             let msg = self.next_message().await?;
             println!("LOG: handle_message: {:#?}", msg);
 
-            if let Packet::Version(version) = &msg {
-                self.handle_version(version).await?;
+            if let Packet::Version(packet) = &msg {
+                self.handle_version(packet).await?;
                 continue;
             }
 
-            if msg == Packet::Verack {
-                self.handle_verack().await?;
+            if let Packet::Verack(packet) = &msg {
+                self.handle_verack(packet).await?;
                 continue;
             }
 
@@ -235,7 +235,7 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn handle_verack(&self) -> Result<()> {
+    pub async fn handle_verack(&self, msg: &VerackPacket) -> Result<()> {
         //TODO see if currentlyConnected is important or not.
         //if self.info.direction == Direction::Outbound {
         //    //Get state lock.
@@ -368,22 +368,19 @@ impl Peer {
     pub async fn next_message(&self) -> Result<Packet> {
         let mut stream = self.stream.lock().await;
 
+        // Read message header
         let mut header = vec![0; 9];
+        stream.read_exact(&mut header)?;
+        let header_buf = Buffer::from(header.clone());
 
-        stream.read_exact(&mut header);
+        // Parse header to get payload size to fetch next
+        let (_, packet_type, payload_size)= Packet::parse_header(header_buf)?;
 
-        let mut header_buf = Buffer::from(header.clone());
-        // TODO@rithvik: check other values, and maybe extract this into a function
-        header_buf.seek(5);
-        let payload_lenth = header_buf.read_u32().unwrap();
+        // Read packet payload
+        let mut payload = vec![0; payload_size as usize];
+        stream.read_exact(&mut payload)?;
+        let packet = Packet::decode_packet(packet_type, Buffer::from(payload))?;
 
-        let mut payload = vec![0; payload_lenth as usize];
-        stream.read_exact(&mut payload);
-
-        let mut raw_packet = header.clone();
-        raw_packet.extend(payload);
-
-        let packet = Packet::decode(Buffer::from(raw_packet))?;
         Ok(packet)
     }
 
@@ -393,7 +390,7 @@ impl Peer {
         let encoded = packet.frame(self.network).to_vec();
         // dbg!("Encoded packet being sent:");
         // dbg!(&encoded);
-        stream.write_all(&encoded);
+        stream.write_all(&encoded)?;
         Ok(())
     }
 
@@ -409,7 +406,7 @@ impl Peer {
     }
 
     pub async fn send_verack(&self) -> Result<()> {
-        let packet = Packet::Verack;
+        let packet = Packet::Verack(VerackPacket::new());
 
         self.send(packet).await?;
 

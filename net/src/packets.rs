@@ -18,7 +18,7 @@ use std::convert::TryInto;
 #[derive(Debug, PartialEq, Clone)]
 pub enum Packet {
     Version(VersionPacket),
-    Verack,
+    Verack(VerackPacket),
     Ping(PingPacket),
     Pong(PongPacket),
     GetAddr,
@@ -55,16 +55,16 @@ pub enum Packet {
 //   DATA: 32
 
 impl Packet {
-    pub fn parse(mut packet: Buffer) -> Result<(Buffer, u8)> {
-        let magic = packet.read_u32()?;
-        let _type = packet.read_u8()?;
-        let size = packet.read_u32()?;
+    pub fn parse_header(mut packet: Buffer) -> Result<(Buffer, u8, u32)> {
+        let _magic = packet.read_u32()?;
+        let payload_type = packet.read_u8()?;
+        let packet_size = packet.read_u32()?;
 
         //Check magic number, throw packet invalid magic number
         //Check size, and ensure it's below constant max message size. -> We already have
         //This checked in Brontide, but I think let's check it again here.
 
-        Ok((packet, _type))
+        Ok((packet, payload_type, packet_size))
     }
 
     //Function to frame the version packet.
@@ -82,21 +82,16 @@ impl Packet {
     }
 
     pub fn decode(packet: Buffer) -> Result<Self> {
-        let (raw_packet, packet_type) = Packet::parse(packet)?;
+        let (raw_packet, packet_type, _) = Packet::parse_header(packet)?;
+        return Packet::decode_packet(packet_type, raw_packet);
+    }
+
+    pub fn decode_packet(packet_type: u8, raw_packet: Buffer) -> Result<Self> {
         match packet_type {
-            0 => {
-                let packet = VersionPacket::decode(raw_packet)?;
-                Ok(Packet::Version(packet))
-            }
-            1 => Ok(Packet::Verack),
-            2 => {
-                let packet = PingPacket::decode(raw_packet)?;
-                Ok(Packet::Ping(packet))
-            }
-            3 => {
-                let packet = PongPacket::decode(raw_packet)?;
-                Ok(Packet::Pong(packet))
-            }
+            0 => Ok(Packet::Version(VersionPacket::decode(raw_packet)?)),
+            1 => Ok(Packet::Verack(VerackPacket::decode(raw_packet)?)),
+            2 => Ok(Packet::Ping(PingPacket::decode(raw_packet)?)),
+            3 => Ok(Packet::Pong(PongPacket::decode(raw_packet)?)),
             4 => Ok(Packet::GetAddr),
             5 => {
                 let packet = AddrPacket::decode(raw_packet)?;
@@ -119,28 +114,10 @@ impl Packet {
         }
     }
 
-    //TODO maybe switch this to the trait encodable -> TODO
-    pub fn encode(&self) -> Buffer {
-        match self {
-            Packet::Version(version) => version.encode(),
-            //TODO check verack encoding.
-            Packet::Verack => Buffer::new(),
-            Packet::Ping(ping) => ping.encode(),
-            Packet::Pong(pong) => pong.encode(),
-            Packet::GetAddr => Buffer::new(),
-            Packet::Addr(addr) => addr.encode(),
-            Packet::Inv(inv) => inv.encode(),
-            Packet::GetData => Buffer::new(),
-            Packet::NotFound => Buffer::new(),
-            Packet::GetBlocks(blocks) => blocks.encode(),
-            _ => Buffer::new(),
-        }
-    }
-
     pub fn packet_type(&self) -> u8 {
         match self {
             Packet::Version(_) => 0,
-            Packet::Verack => 1,
+            Packet::Verack(_) => 1,
             Packet::Ping(_) => 2,
             Packet::Pong(_) => 3,
             Packet::GetAddr => 4,
@@ -175,14 +152,32 @@ impl Packet {
             // _ => 0, // TODO: handle unknown packet type
         }
     }
+}
 
-    pub fn size(&self) -> u32 {
+impl Encodable for Packet {
+    fn size(&self) -> u32 {
         match self {
-            Packet::Version(version) => version.size(),
-            Packet::Verack => 0,
-            Packet::Ping(ping) => ping.size(),
-            Packet::Pong(pong) => pong.size(),
+            Packet::Version(packet) => packet.size(),
+            Packet::Verack(packet) => packet.size(),
+            Packet::Ping(packet) => packet.size(),
+            Packet::Pong(packet) => packet.size(),
             _ => 0,
+        }
+    }
+
+    fn encode(&self) -> Buffer {
+        match self {
+            Packet::Version(packet) => packet.encode(),
+            Packet::Verack(packet) => packet.encode(),
+            Packet::Ping(packet) => packet.encode(),
+            Packet::Pong(packet) => packet.encode(),
+            Packet::GetAddr => Buffer::new(),
+            Packet::Addr(packet) => packet.encode(),
+            Packet::Inv(packet) => packet.encode(),
+            Packet::GetData => Buffer::new(),
+            Packet::NotFound => Buffer::new(),
+            Packet::GetBlocks(packet) => packet.encode(),
+            _ => Buffer::new(),
         }
     }
 }
@@ -314,6 +309,37 @@ impl Encodable for VersionPacket {
         buffer.write_u8(self.no_relay as u8);
 
         buffer
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VerackPacket {
+    //TODO remove type here, it's implied by the struct.
+    _type: PacketType,
+}
+
+//Make Packet a trait, and have it include functions like size and encode.
+impl VerackPacket {
+    pub fn new() -> Self {
+        VerackPacket {
+            _type: PacketType::Verack,
+        }
+    }
+
+    fn decode(mut packet: Buffer) -> Result<Self> {
+        Ok(VerackPacket {
+            _type: PacketType::Verack,
+        })
+    }
+}
+
+impl Encodable for VerackPacket {
+    fn size(&self) -> u32 {
+        0
+    }
+
+    fn encode(&self) -> Buffer {
+        Buffer::new()
     }
 }
 
