@@ -2,12 +2,12 @@ use crate::net_address::NetAddress;
 use crate::packets::{Packet, PingPacket, PongPacket, VersionPacket};
 use handshake_types::Time;
 use log::warn;
+use std::io::{Write, Read};
 use std::net::SocketAddr;
 //TODO reimplement when types crate is available.
 use crate::error::Error;
 use crate::types::{IdentityKey, Nonce, ProtocolVersion, Services};
 use crate::Result;
-use brontide::{BrontideStream, BrontideBuilder, PublicKey};
 use chrono::{DateTime, Utc};
 use extended_primitives::Buffer;
 use futures::channel::mpsc::UnboundedSender;
@@ -17,6 +17,7 @@ use handshake_encoding::Encodable;
 use handshake_protocol::network::Network;
 use handshake_types::difficulty::Difficulty;
 // use romio::TcpStream;
+use std::net::TcpStream;
 use std::sync::{Arc, RwLock};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,12 +74,9 @@ pub struct Peer {
     //ARC
     pub live_info: Mutex<PeerLiveInfo>,
     //We might want to break this into 2, one for writing and one for reading.
-    //would prevent locks on both, and increase the speed here. TODO
-    //The likely way to do this would actually be in the brontide package, where we just expose a
-    //mspc or a oneshot channel to one async function that loops through all messages and then
-    //reads and or writes to them.
+    //would prevent locks on both, and increase the speed here.
     //ARC
-    pub brontide: Mutex<BrontideStream>,
+    pub stream: Mutex<TcpStream>,
     //ARC
     pub network: Network,
     //Possibly combine state and live info into the same lock.
@@ -89,14 +87,6 @@ pub struct Peer {
     pub tx: Mutex<UnboundedSender<Packet>>,
     pub ping_stats: Mutex<PingStats>,
     pub prefer_headers: Mutex<bool>,
-    // // set of all hashes known to this peer (so no need to send)
-    // tracking_adapter: TrackingAdapter,
-    // tracker: Arc<conn::Tracker>,
-    // send_handle: Mutex<conn::ConnHandle>,
-    // // we need a special lock for stop operation, can't reuse handle mutex for that
-    // // because it may be locked by different reasons, so we should wait for that, close
-    // // mutex can be taken only during shutdown, it happens once
-    // stop_handle: Mutex<conn::StopHandle>
 }
 
 impl Peer {
@@ -110,18 +100,13 @@ impl Peer {
     ) -> Result<Peer> {
         println!("LOG: Peer connect: {:#?}", addr);
 
-        let mut builder = BrontideBuilder::new(key);
         let hostname = &addr.address.to_string();
-        println!("LOG: Peer connect: hostname: {:#?}", hostname);
-        let remote_public = PublicKey::from(addr.key.as_array());
-        println!("LOG: Peer connect: remote_public: {:#?}", remote_public);
-
-        let stream = builder.connect(hostname, remote_public).await.unwrap();
-        println!("LOG: Peer connect: stream.");
+        let stream = TcpStream::connect(hostname).expect("Could not connect");
+        // println!("LOG Peer connect: stream: {:#?}", stream);
 
         //TODO split the stream to readers and writers
-        //TODO maybe should make these their own structs. BrontideReader, BrontideWriter
-        //let (brx, btx) = stream.split();
+        //TODO maybe should make these their own structs.
+        //let (srx, stx) = stream.split();
 
         let info = PeerInfo {
             address: addr,
@@ -153,7 +138,7 @@ impl Peer {
         Ok(Peer {
             info,
             live_info: Mutex::new(live_info),
-            brontide: Mutex::new(stream),
+            stream: Mutex::new(stream),
             loader: RwLock::new(false),
             network,
             state,
@@ -172,19 +157,22 @@ impl Peer {
         //drop this.
         loop {
             let msg = self.next_message().await?;
+            println!("LOG: handle_message: {:#?}", msg);
 
             if let Packet::Version(version) = &msg {
                 self.handle_version(version).await?;
+                continue;
+            }
+
+            if msg == Packet::Verack {
+                self.handle_verack().await?;
+                continue;
             }
 
             //If we have not received a version, then continue, and add to the peers ban score.
             if self.info.version.is_none() {
                 // self.increase_ban(1);
                 continue;
-            }
-
-            if msg == Packet::Verack {
-                self.handle_verack().await?;
             }
 
             //Get state lock
@@ -205,7 +193,9 @@ impl Peer {
                 Packet::Pong(pong) => self.handle_pong(pong).await?,
                 Packet::SendHeaders => self.handle_send_headers().await?,
                 //Remaining packets, do nothing. They are sent to the pool.
-                _ => {}
+                _ => {
+                    println!("LOG: handle_message: did not match any");
+                }
             };
 
             //Acquire tx lock.
@@ -237,10 +227,7 @@ impl Peer {
         //TODO do we set interaction stuff here?
         live_info.height = msg.height;
 
-        dbg!(&self);
-
-        //Send back our own version.
-        self.send_version().await?;
+        // dbg!(&self);
 
         //Send Verack
         self.send_verack().await?;
@@ -258,7 +245,7 @@ impl Peer {
         //    // info!("New outbound peer connected: version: {}, blocks: {}, peer: {}", self.info.version, self.info.address);
         //}
 
-        //    //Get state lock.
+        //Get state lock.
         let mut state = self.state.lock().await;
 
         //Mark the node as connected.
@@ -287,7 +274,7 @@ impl Peer {
 
         if let Some(challenge_nonce) = stats.challenge {
             if nonce != challenge_nonce {
-                if nonce == 0 {
+                if nonce == [0; 8] {
                     // info!("Peer sent a zero nonce {}", self.info.address);
                     stats.challenge = None;
                     return Ok(());
@@ -364,47 +351,49 @@ impl Peer {
     //   this.hosts.markLocal(packet.remote);
 
     pub async fn init_version(&mut self) -> Result<()> {
+        // TODO: Assume outbound for now
+
+        // Send version
         self.send_version().await?;
 
-        //Put timeout in next message here.
-        let ack = self.next_message().await?;
-
-        // let ack2 = self.brontide.next_message().await?;
-        let ack2 = self.next_message().await?;
-
-        dbg!(ack);
-
-        dbg!(ack2);
-
-        //await this has to occur in a timeout.
-        //So we basically await the exact message size of ack, and then
-        // self.receive_ack(
+        // // Wait for a message
+        // let ack = self.next_message().await?;
+        // dbg!(ack);
 
         Ok(())
     }
 
-    //Wrapper around brontide's next message
     //TODO this needs to be tested as I think it might be holding the lock not allowing sending to
     //occur.
     pub async fn next_message(&self) -> Result<Packet> {
-        //Grab brontide lock -> TODO make sure this is working cleanly.
-        //We might be locking here until next message is received, in which case we want to drop
-        //the lock.
-        let mut brontide = self.brontide.lock().await;
-        let raw_packet = brontide.next_message().await?;
+        let mut stream = self.stream.lock().await;
+
+        let mut header = vec![0; 9];
+
+        stream.read_exact(&mut header);
+
+        let mut header_buf = Buffer::from(header.clone());
+        // TODO@rithvik: check other values, and maybe extract this into a function
+        header_buf.seek(5);
+        let payload_lenth = header_buf.read_u32().unwrap();
+
+        let mut payload = vec![0; payload_lenth as usize];
+        stream.read_exact(&mut payload);
+
+        let mut raw_packet = header.clone();
+        raw_packet.extend(payload);
 
         let packet = Packet::decode(Buffer::from(raw_packet))?;
-
         Ok(packet)
     }
 
-    //Change brontide to be a mutex, then this isn't mut
     pub async fn send(&self, packet: Packet) -> Result<()> {
-        //Acquire Brontide Lock TODO should just be writing lock.
-        let mut brontide = self.brontide.lock().await;
-
-        brontide.write(&packet.frame(self.network).to_vec()).await?;
-
+        println!("LOG: send: packet: {:#?}", packet);
+        let mut stream = self.stream.lock().await;
+        let encoded = packet.frame(self.network).to_vec();
+        // dbg!("Encoded packet being sent:");
+        // dbg!(&encoded);
+        stream.write_all(&encoded);
         Ok(())
     }
 

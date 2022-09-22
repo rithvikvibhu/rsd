@@ -6,7 +6,7 @@ pub const MIN_PROTOCOL_VERSION: u32 = 1;
 
 //TODO change this now since net version might be different than Rust
 /// User agent passed along in messages
-pub const USER_AGENT: &str = concat!("RSD:", env!("CARGO_PKG_VERSION"));
+pub const USER_AGENT: &str = concat!("/rsd:", env!("CARGO_PKG_VERSION"), "/");
 
 ///Maximum message size that can be sent ~8mb
 pub const MAX_MESSAGE_SIZE: u32 = 8_000_000;

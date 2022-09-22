@@ -11,6 +11,7 @@ use handshake_primitives::{Block, BlockHeader, Inventory, Transaction};
 use handshake_protocol::network::Network;
 use handshake_types::Bloom;
 use rand::Rng;
+use std::convert::TryInto;
 
 //TODO I think we might be able to remove packet types from all of these things, but for now keep
 //them.
@@ -140,15 +141,47 @@ impl Packet {
         match self {
             Packet::Version(_) => 0,
             Packet::Verack => 1,
-            _ => 2,
+            Packet::Ping(_) => 2,
+            Packet::Pong(_) => 3,
+            Packet::GetAddr => 4,
+            Packet::Addr(_) => 5,
+            Packet::Inv(_) => 6,
+            Packet::GetData => 7,
+            Packet::NotFound => 8,
+            Packet::GetBlocks(_) => 9,
+            Packet::GetHeaders(_) => 10,
+            Packet::Headers(_) => 11,
+            Packet::SendHeaders => 12,
+            Packet::Block(_) => 13,
+            Packet::Tx(_) => 14,
+            Packet::Reject(_) => 15,
+            Packet::Mempool => 16,
+            // Packet::FilterLoad => 17,
+            // Packet::FilterAdd => 18,
+            // Packet::FilterClear => 19,
+            // Packet::MerkleBlock => 20,
+            // Packet::FeeFilter => 21,
+            // Packet::SendCompact => 22,
+            // Packet::CompactBlock => 23,
+            // Packet::GetBlockTransaction => 24,
+            // Packet::BlockTransaction => 25,
+            // Packet::GetProof => 26,
+            // Packet::Proof => 27,
+            // Packet::Claim => 28,
+            // Packet::Airdrop => 29,
+            Packet::Unknown(_) => 30,
+            // Packet::Internal => 31,
+            // Packet::Data => 32,
+            // _ => 0, // TODO: handle unknown packet type
         }
     }
 
     pub fn size(&self) -> u32 {
         match self {
             Packet::Version(version) => version.size(),
-            //TODO is verack size 0?
             Packet::Verack => 0,
+            Packet::Ping(ping) => ping.size(),
+            Packet::Pong(pong) => pong.size(),
             _ => 0,
         }
     }
@@ -300,13 +333,12 @@ impl PingPacket {
     }
 
     pub fn decode(mut packet: Buffer) -> Result<Self> {
-        //TODO
-        // let nonce = packet.read_bytes(8)?;
-        // let nonce = packet.read_u256()?;
+
+        let nonce = packet.read_bytes(8)?;
 
         Ok(PingPacket {
             _type: PacketType::Ping,
-            nonce: Default::default(),
+            nonce: nonce.try_into().unwrap(),
         })
     }
 }
@@ -319,7 +351,7 @@ impl Encodable for PingPacket {
     fn encode(&self) -> Buffer {
         let mut buffer = Buffer::new();
 
-        buffer.write_u64(self.nonce);
+        buffer.write_bytes(&self.nonce);
 
         buffer
     }
@@ -340,11 +372,11 @@ impl PongPacket {
     }
 
     pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let nonce = packet.read_u64()?;
+        let nonce = packet.read_bytes(8)?;
 
         Ok(PongPacket {
             _type: PacketType::Pong,
-            nonce,
+            nonce: nonce.try_into().unwrap(),
         })
     }
 }
@@ -357,7 +389,7 @@ impl Encodable for PongPacket {
     fn encode(&self) -> Buffer {
         let mut buffer = Buffer::new();
 
-        buffer.write_u64(self.nonce);
+        buffer.write_bytes(&self.nonce);
 
         buffer
     }

@@ -240,13 +240,20 @@ impl FromStr for NetAddress {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let pieces: Vec<&str> = s.split('@').collect();
 
-        if pieces.len() != 2 {
-            return Err(error::Error::InvalidIdentityKey);
+        // if pieces.len() != 2 {
+        //     return Err(error::Error::InvalidIdentityKey);
+        // }
+        let key: IdentityKey;
+        let address: SocketAddr;
+
+        if (pieces.len() == 2) {
+            key = pieces[0].parse()?;
+            address = pieces[1].parse()?;
+        } else {
+            let empty = [0u8; 33];
+            key = IdentityKey::from(empty);
+            address = pieces[0].parse()?;
         }
-
-        let key: IdentityKey = pieces[0].parse()?;
-
-        let address: SocketAddr = pieces[1].parse()?;
 
         Ok(NetAddress {
             address,

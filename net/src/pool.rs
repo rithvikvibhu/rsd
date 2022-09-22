@@ -197,7 +197,8 @@ impl Pool {
             };
 
             //TODO remove
-            let address_connect: Option<NetAddress> = Some("aorsxa4ylaacshipyjkfbvzfkh3jhh4yowtoqdt64nzemqtiw2whk@127.0.0.1:46806".parse().unwrap());
+            // let address_connect: Option<NetAddress> = Some("aorsxa4ylaacshipyjkfbvzfkh3jhh4yowtoqdt64nzemqtiw2whk@127.0.0.1:46806".parse().unwrap());
+            let address_connect: Option<NetAddress> = Some("127.0.0.1:14038".parse().unwrap());
 
             if address_connect.is_none() {
                 //TODO another loop?
@@ -215,7 +216,8 @@ impl Pool {
                 let tx = self.tx.clone();
                 juliex::spawn(async move {
                 let mut peer = Peer::connect(address_connect.unwrap(), [1; 32], Network::Regtest, tx).await.unwrap();
-                    peer.handle_messages().await;
+                peer.init_version().await;
+                peer.handle_messages().await;
                 });
             }
             //TODO remove

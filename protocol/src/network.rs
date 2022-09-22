@@ -19,10 +19,10 @@ impl Network {
 
     pub fn magic(&self) -> u32 {
         match *self {
-            Network::Mainnet => 3958442712,
-            Network::Testnet => 165176447,
-            Network::Regtest => 3169940394,
-            Network::Simnet => 1195102226,
+            Network::Mainnet => 1533997779, //3958442712,
+            Network::Testnet => 2974944722, //165176447,
+            Network::Regtest => 2922943951, //3169940394,
+            Network::Simnet => 241471196, //1195102226,
         }
     }
 
