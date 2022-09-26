@@ -78,7 +78,6 @@ impl Payload {
     pub fn parse_header(mut packet: Buffer) -> Result<Self> {
         let magic = packet.read_u32()?;
 
-        // let payload_type = PacketType::try_from(packet.read_u8()?).unwrap();
         let payload_type = match PacketType::try_from(packet.read_u8()?) {
             Ok(p) => p,
             Err(error) => {
@@ -173,7 +172,10 @@ pub trait Packet: std::fmt::Debug + DowncastSync {
         0
     }
 
-    fn encode(&self) -> Buffer;
+    fn encode(&self) -> Buffer {
+        Buffer::new()
+    }
+
     fn decode(buffer: &mut Buffer) -> Result<Box<dyn Packet>> where Self: Sized;
 }
 impl_downcast!(sync Packet);
@@ -284,14 +286,6 @@ impl Packet for VerackPacket {
         PacketType::Verack
     }
 
-    fn size(&self) -> u32 {
-        0
-    }
-
-    fn encode(&self) -> Buffer {
-        Buffer::new()
-    }
-
     fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
         Ok(Box::new(VerackPacket {}))
     }
@@ -338,7 +332,7 @@ impl Packet for PingPacket {
 }
 
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PongPacket {
     pub(crate) nonce: Nonce,
 }
@@ -374,20 +368,67 @@ impl Packet for PongPacket {
         Ok(Box::new(PongPacket {
             nonce: nonce.try_into().unwrap(),
         }))
-        //TODO would it be faster to initalize with capacity here? since we know the count.
-        let mut items = Vec::new();
-        for _ in 0..count.to_u64() {
-            items.push(NetAddress::decode(&mut packet)?);
-        }
-
-        Ok(AddrPacket {
-            _type: PacketType::Addr,
-            items,
-        })
     }
 }
 
-impl Encodable for AddrPacket {
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnknownPacket {
+    data: Buffer,
+}
+
+impl Packet for UnknownPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Unknown
+    }
+
+    fn size(&self) -> u32 {
+        self.data.len() as u32
+    }
+
+    fn encode(&self) -> Buffer {
+        self.data.clone()
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(UnknownPacket {
+            data: packet.clone(),
+        }))
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GetAddrPacket {
+}
+
+impl GetAddrPacket {
+    pub fn new() -> Self {
+        GetAddrPacket {}
+    }
+}
+
+impl Packet for GetAddrPacket {
+    fn code(&self) -> PacketType {
+        PacketType::GetAddr
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(GetAddrPacket {}))
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AddrPacket {
+    items: Vec<NetAddress>,
+}
+
+impl Packet for AddrPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Addr
+    }
+
     fn size(&self) -> u32 {
         let mut size = 0;
         let length = VarInt::from(self.items.len() as u64);
@@ -411,31 +452,32 @@ impl Encodable for AddrPacket {
 
         buffer
     }
-}
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct InvPacket {
-    _type: PacketType,
-    items: Vec<Inventory>,
-}
-
-impl InvPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
         let count = packet.read_varint()?;
-
+        //TODO would it be faster to initalize with capacity here? since we know the count.
         let mut items = Vec::new();
         for _ in 0..count.to_u64() {
-            items.push(Inventory::decode(&mut packet)?);
+            items.push(NetAddress::decode(packet)?);
         }
 
-        Ok(InvPacket {
-            _type: PacketType::Inv,
+        Ok(Box::new(AddrPacket {
             items,
-        })
+        }))
     }
 }
 
-impl Encodable for InvPacket {
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct InvPacket {
+    items: Vec<Inventory>,
+}
+
+impl Packet for InvPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Inv
+    }
+
     fn size(&self) -> u32 {
         let mut size = 0;
         let length = VarInt::from(self.items.len() as u64);
@@ -464,40 +506,75 @@ impl Encodable for InvPacket {
 
         buffer
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let count = packet.read_varint()?;
+
+        let mut items = Vec::new();
+        for _ in 0..count.to_u64() {
+            items.push(Inventory::decode(packet)?);
+        }
+
+        Ok(Box::new(InvPacket {
+            items,
+        }))
+    }
 }
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct GetDataPacket {
+}
+
+impl GetDataPacket {
+    pub fn new() -> Self {
+        GetDataPacket {}
+    }
+}
+
+impl Packet for GetDataPacket {
+    fn code(&self) -> PacketType {
+        PacketType::GetData
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(GetDataPacket {}))
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct NotFoundPacket {
+}
+
+impl NotFoundPacket {
+    pub fn new() -> Self {
+        NotFoundPacket {}
+    }
+}
+
+impl Packet for NotFoundPacket {
+    fn code(&self) -> PacketType {
+        PacketType::NotFound
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(NotFoundPacket {}))
+    }
+}
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GetBlocksPacket {
-    _type: PacketType,
     locator: Vec<Hash>,
     stop: Hash,
 }
 
-impl GetBlocksPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let count = packet.read_varint()?;
-
-        //TODO probably catch this error, and destroy the peer.
-        //TODO have count.to_usize, count.to_u32, etc
-        assert!(count.as_u64() <= MAX_INV as u64);
-
-        let mut locator: Vec<Hash> = Vec::new();
-
-        for _ in 0..count.to_u64() {
-            locator.push(packet.read_hash()?);
-        }
-
-        let stop = packet.read_hash()?;
-
-        Ok(GetBlocksPacket {
-            _type: PacketType::GetBlocks,
-            locator,
-            stop,
-        })
+impl Packet for GetBlocksPacket {
+    fn code(&self) -> PacketType {
+        PacketType::GetBlocks
     }
-}
 
-impl Encodable for GetBlocksPacket {
     fn size(&self) -> u32 {
         let mut size = 0;
         let length = VarInt::from(self.locator.len() as u64);
@@ -524,40 +601,41 @@ impl Encodable for GetBlocksPacket {
 
         buffer
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let count = packet.read_varint()?;
+
+        //TODO probably catch this error, and destroy the peer.
+        //TODO have count.to_usize, count.to_u32, etc
+        assert!(count.as_u64() <= MAX_INV as u64);
+
+        let mut locator: Vec<Hash> = Vec::new();
+
+        for _ in 0..count.to_u64() {
+            locator.push(packet.read_hash()?);
+        }
+
+        let stop = packet.read_hash()?;
+
+        Ok(Box::new(GetBlocksPacket {
+            locator,
+            stop,
+        }))
+    }
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct GetHeadersPacket {
-    _type: PacketType,
     locator: Vec<Hash>,
     stop: Hash,
 }
 
-impl GetHeadersPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let count = packet.read_varint()?;
-
-        //TODO probably catch this error, and destroy the peer.
-        //TODO have count.to_usize, count.to_u32, etc
-        assert!(count.as_u64() <= MAX_INV as u64);
-
-        let mut locator: Vec<Hash> = Vec::new();
-
-        for _ in 0..count.to_u64() {
-            locator.push(packet.read_hash()?);
-        }
-
-        let stop = packet.read_hash()?;
-
-        Ok(GetHeadersPacket {
-            _type: PacketType::GetHeaders,
-            locator,
-            stop,
-        })
+impl Packet for GetHeadersPacket {
+    fn code(&self) -> PacketType {
+        PacketType::GetHeaders
     }
-}
 
-impl Encodable for GetHeadersPacket {
     fn size(&self) -> u32 {
         let mut size = 0;
         let length = VarInt::from(self.locator.len() as u64);
@@ -584,35 +662,40 @@ impl Encodable for GetHeadersPacket {
 
         buffer
     }
-}
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct HeadersPacket {
-    _type: PacketType,
-    items: Vec<BlockHeader>,
-}
-
-impl HeadersPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
         let count = packet.read_varint()?;
 
-        //TODO not a big fan of these asserts.
-        assert!(count.as_u64() <= 2000);
+        //TODO probably catch this error, and destroy the peer.
+        //TODO have count.to_usize, count.to_u32, etc
+        assert!(count.as_u64() <= MAX_INV as u64);
 
-        //TODO would it be faster to initalize with capacity here? since we know the count.
-        let mut items = Vec::new();
+        let mut locator: Vec<Hash> = Vec::new();
+
         for _ in 0..count.to_u64() {
-            items.push(BlockHeader::decode(&mut packet)?);
+            locator.push(packet.read_hash()?);
         }
 
-        Ok(HeadersPacket {
-            _type: PacketType::Headers,
-            items,
-        })
+        let stop = packet.read_hash()?;
+
+        Ok(Box::new(GetHeadersPacket {
+            locator,
+            stop,
+        }))
     }
 }
 
-impl Encodable for HeadersPacket {
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HeadersPacket {
+    items: Vec<BlockHeader>,
+}
+
+impl Packet for HeadersPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Headers
+    }
+
     fn size(&self) -> u32 {
         let mut size = 0;
         let length = VarInt::from(self.items.len() as u64);
@@ -639,33 +722,65 @@ impl Encodable for HeadersPacket {
 
         buffer
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let count = packet.read_varint()?;
+
+        //TODO not a big fan of these asserts.
+        assert!(count.as_u64() <= 2000);
+
+        //TODO would it be faster to initalize with capacity here? since we know the count.
+        let mut items = Vec::new();
+        for _ in 0..count.to_u64() {
+            items.push(BlockHeader::decode(packet)?);
+        }
+
+        Ok(Box::new(HeadersPacket {
+            items,
+        }))
+    }
 }
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SendHeadersPacket {
+}
+
+impl SendHeadersPacket {
+    pub fn new() -> Self {
+        SendHeadersPacket {}
+    }
+}
+
+impl Packet for SendHeadersPacket {
+    fn code(&self) -> PacketType {
+        PacketType::SendHeaders
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(SendHeadersPacket {}))
+    }
+}
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlockPacket {
-    _type: PacketType,
     block: Block,
 }
 
 impl BlockPacket {
     pub fn new(block: Block) -> BlockPacket {
         BlockPacket {
-            _type: PacketType::Block,
             block,
         }
     }
-
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let block = Block::decode(&mut packet)?;
-
-        Ok(BlockPacket {
-            _type: PacketType::Block,
-            block,
-        })
-    }
 }
 
-impl Encodable for BlockPacket {
+impl Packet for BlockPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Block
+    }
+
     fn size(&self) -> u32 {
         self.block.size()
     }
@@ -673,33 +788,35 @@ impl Encodable for BlockPacket {
     fn encode(&self) -> Buffer {
         self.block.encode()
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let block = Block::decode(packet)?;
+
+        Ok(Box::new(BlockPacket {
+            block,
+        }))
+    }
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TxPacket {
-    _type: PacketType,
     tx: Transaction,
 }
 
 impl TxPacket {
     pub fn new(tx: Transaction) -> TxPacket {
         TxPacket {
-            _type: PacketType::Tx,
             tx,
         }
     }
-
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let tx = Transaction::decode(&mut packet)?;
-
-        Ok(TxPacket {
-            _type: PacketType::Tx,
-            tx,
-        })
-    }
 }
 
-impl Encodable for TxPacket {
+impl Packet for TxPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Tx
+    }
+
     fn size(&self) -> u32 {
         self.tx.size()
     }
@@ -707,71 +824,31 @@ impl Encodable for TxPacket {
     fn encode(&self) -> Buffer {
         self.tx.encode()
     }
-}
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct FilterLoadPacket {
-    filter: Bloom,
-}
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let tx = Transaction::decode(packet)?;
 
-impl FilterLoadPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let filter = Bloom::decode(&mut packet)?;
-
-        Ok(FilterLoadPacket { filter })
+        Ok(Box::new(TxPacket {
+            tx,
+        }))
     }
 }
 
-impl Encodable for FilterLoadPacket {
-    fn size(&self) -> u32 {
-        self.filter.size()
-    }
 
-    fn encode(&self) -> Buffer {
-        self.filter.encode()
-    }
-}
-
-//TODO functions surrounding this need to be implemented, for now it's fine.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RejectPacket {
-    pub(crate) _type: PacketType,
     message: u8,
     //Going to be a custom type.
-    code: u8,
+    reject_code: u8,
     reason: String,
     hash: Option<Hash>,
 }
 
-impl RejectPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let message = packet.read_u8()?;
-        let code = packet.read_u8()?;
-        let reason_length = packet.read_u8()?;
-
-        let reason = packet.read_string(reason_length as usize)?;
-        let hash: Option<Hash>;
-
-        //Redo this and use the actual packet types instead of hardcoded numbers TODO
-        match message {
-            13 => hash = Some(packet.read_hash()?),
-            14 => hash = Some(packet.read_hash()?),
-            28 => hash = Some(packet.read_hash()?),
-            29 => hash = Some(packet.read_hash()?),
-            _ => hash = None,
-        };
-
-        Ok(RejectPacket {
-            _type: PacketType::Reject,
-            message,
-            code,
-            reason,
-            hash,
-        })
+impl Packet for RejectPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Reject
     }
-}
 
-impl Encodable for RejectPacket {
     fn size(&self) -> u32 {
         let mut size = 0;
         size += 1;
@@ -790,7 +867,7 @@ impl Encodable for RejectPacket {
         let mut buffer = Buffer::new();
 
         buffer.write_u8(self.message);
-        buffer.write_u8(self.code);
+        buffer.write_u8(self.reject_code);
         buffer.write_u8(self.reason.len() as u8);
         buffer.write_str(&self.reason);
 
@@ -800,29 +877,78 @@ impl Encodable for RejectPacket {
 
         buffer
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let message = packet.read_u8()?;
+        let reject_code = packet.read_u8()?;
+        let reason_length = packet.read_u8()?;
+
+        let reason = packet.read_string(reason_length as usize)?;
+        let hash: Option<Hash>;
+
+        //Redo this and use the actual packet types instead of hardcoded numbers TODO
+        match message {
+            13 => hash = Some(packet.read_hash()?),
+            14 => hash = Some(packet.read_hash()?),
+            28 => hash = Some(packet.read_hash()?),
+            29 => hash = Some(packet.read_hash()?),
+            _ => hash = None,
+        };
+
+        Ok(Box::new(RejectPacket {
+            message,
+            reject_code,
+            reason,
+            hash,
+        }))
+    }
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct UnknownPacket {
-    data: Buffer,
+pub struct MempoolPacket {
 }
 
-impl Packet for UnknownPacket {
+impl MempoolPacket {
+    pub fn new() -> Self {
+        MempoolPacket {}
+    }
+}
+
+impl Packet for MempoolPacket {
     fn code(&self) -> PacketType {
-        PacketType::Unknown
-    }
-
-    fn size(&self) -> u32 {
-        self.data.len() as u32
-    }
-
-    fn encode(&self) -> Buffer {
-        self.data.clone()
+        PacketType::Mempool
     }
 
     fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
-        Ok(Box::new(UnknownPacket {
-            data: packet.clone(),
+        Ok(Box::new(MempoolPacket {}))
+    }
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct FilterLoadPacket {
+    filter: Bloom,
+}
+
+impl Packet for FilterLoadPacket {
+    fn code(&self) -> PacketType {
+        PacketType::FilterLoad
+    }
+
+    fn size(&self) -> u32 {
+        self.filter.size()
+    }
+
+    fn encode(&self) -> Buffer {
+        self.filter.encode()
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let filter = Bloom::decode(packet)?;
+
+        Ok(Box::new(FilterLoadPacket {
+            filter
         }))
     }
 }
