@@ -1,7 +1,8 @@
 use crate::net_address::NetAddress;
-use crate::packets::{Packet, PingPacket, PongPacket, VersionPacket, VerackPacket};
+use crate::packets::*;
 use handshake_types::Time;
 use log::warn;
+use std::convert::TryFrom;
 use std::io::{Write, Read};
 use std::net::SocketAddr;
 //TODO reimplement when types crate is available.
@@ -84,7 +85,7 @@ pub struct Peer {
     //TODO this might need to be RwLock
     pub loader: RwLock<bool>,
     //ARC
-    pub tx: Mutex<UnboundedSender<Packet>>,
+    pub tx: Mutex<UnboundedSender<Payload>>,
     pub ping_stats: Mutex<PingStats>,
     pub prefer_headers: Mutex<bool>,
 }
@@ -96,7 +97,7 @@ impl Peer {
         addr: NetAddress,
         key: [u8; 32],
         network: Network,
-        tx: UnboundedSender<Packet>,
+        tx: UnboundedSender<Payload>,
     ) -> Result<Peer> {
         println!("LOG: Peer connect: {:#?}", addr);
 
@@ -156,16 +157,21 @@ impl Peer {
         //Need to check if this peer no longer exists on each loop, since otherwise we'll never
         //drop this.
         loop {
-            let msg = self.next_message().await?;
-            println!("LOG: handle_message: {:#?}", msg);
+            let payload = self.next_message().await?;
+            println!("LOG: handle_message: {:#?}", payload);
 
-            if let Packet::Version(packet) = &msg {
-                self.handle_version(packet).await?;
+            let packet = match payload.packet.as_ref() {
+                Some(packet) => packet,
+                None => { continue; }
+            };
+
+            if packet.code() == PacketType::Version {
+                self.handle_version(&payload).await?;
                 continue;
             }
 
-            if let Packet::Verack(packet) = &msg {
-                self.handle_verack(packet).await?;
+            if packet.code() == PacketType::Verack {
+                self.handle_verack(&payload).await?;
                 continue;
             }
 
@@ -186,15 +192,17 @@ impl Peer {
                 continue;
             }
 
-            match &msg {
+            match packet.code().into() {
                 //TODO filterload, filteradd, filterclear, feefilter,
                 //sendcompact
-                Packet::Ping(ping) => self.handle_ping(ping).await?,
-                Packet::Pong(pong) => self.handle_pong(pong).await?,
-                Packet::SendHeaders => self.handle_send_headers().await?,
+
+                PacketType::Ping => self.handle_ping(&payload).await?,
+                PacketType::Pong => self.handle_pong(&payload).await?,
+                // Packet::SendHeaders => self.handle_send_headers().await?,
                 //Remaining packets, do nothing. They are sent to the pool.
                 _ => {
-                    println!("LOG: handle_message: did not match any");
+                    println!("LOG: handle_message: did not match any in peer");
+                    ()
                 }
             };
 
@@ -202,30 +210,35 @@ impl Peer {
             let mut tx = self.tx.lock().await;
 
             //TODO need to implement the error here
-            tx.send(msg).await;
+            tx.send(payload).await.unwrap();
         }
 
         Ok(())
     }
 
-    pub async fn handle_version(&mut self, msg: &VersionPacket) -> Result<()> {
+    pub async fn handle_version(&mut self, payload: &Payload) -> Result<()> {
+        let generic_packet = payload.packet.as_ref().unwrap();
+        assert_eq!(PacketType::try_from(payload.code).unwrap(), PacketType::Version);
+
+        let packet = generic_packet.as_any().downcast_ref::<VersionPacket>().unwrap();
+
         if self.info.version.is_some() {
             warn!("Peer sent a duplcation version.");
             // Increase ban by 1.
             // self.increase_ban(1);
         }
 
-        //Do all non-chaning info here.
-        self.info.version = Some(msg.version);
-        self.info.services = msg.services;
-        self.info.user_agent = msg.agent.clone();
-        self.info.no_relay = msg.no_relay;
+        //Do all non-changing info here.
+        self.info.version = Some(packet.version);
+        self.info.services = packet.services;
+        self.info.user_agent = packet.agent.clone();
+        self.info.no_relay = packet.no_relay;
 
         //Acquire lock, and change live info.
         let mut live_info = self.live_info.lock().await;
 
         //TODO do we set interaction stuff here?
-        live_info.height = msg.height;
+        live_info.height = packet.height;
 
         // dbg!(&self);
 
@@ -235,7 +248,7 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn handle_verack(&self, msg: &VerackPacket) -> Result<()> {
+    pub async fn handle_verack(&self, payload: &Payload) -> Result<()> {
         //TODO see if currentlyConnected is important or not.
         //if self.info.direction == Direction::Outbound {
         //    //Get state lock.
@@ -254,19 +267,27 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn handle_ping(&self, msg: &PingPacket) -> Result<()> {
+    pub async fn handle_ping(&self, payload: &Payload) -> Result<()> {
+        let generic_packet = payload.packet.as_ref().unwrap();
+        assert_eq!(PacketType::try_from(payload.code).unwrap(), PacketType::Ping);
+
+        let packet = generic_packet.as_any().downcast_ref::<PingPacket>().unwrap();
+
         //Assume the packets always have nonce. Write a test to ensure that this is the case TODO
         //The test should try to send a ping that does not have a nonce, and we should handle it
         //accordingly.
-        let packet = PongPacket::new(msg.nonce);
-
-        self.send(Packet::Pong(packet)).await?;
-
+        let pong_packet = PongPacket::new(packet.nonce);
+        self.send(Box::new(pong_packet)).await?;
         Ok(())
     }
 
-    pub async fn handle_pong(&self, msg: &PongPacket) -> Result<()> {
-        let nonce = msg.nonce;
+    pub async fn handle_pong(&self, payload: &Payload) -> Result<()> {
+        let generic_packet = payload.packet.as_ref().unwrap();
+        assert_eq!(PacketType::try_from(payload.code).unwrap(), PacketType::Pong);
+
+        let packet = generic_packet.as_any().downcast_ref::<PongPacket>().unwrap();
+
+        let nonce = packet.nonce;
         let now = Time::now();
 
         //Acquire ping stats lock
@@ -365,7 +386,7 @@ impl Peer {
 
     //TODO this needs to be tested as I think it might be holding the lock not allowing sending to
     //occur.
-    pub async fn next_message(&self) -> Result<Packet> {
+    pub async fn next_message(&self) -> Result<Payload> {
         let mut stream = self.stream.lock().await;
 
         // Read message header
@@ -374,20 +395,23 @@ impl Peer {
         let header_buf = Buffer::from(header.clone());
 
         // Parse header to get payload size to fetch next
-        let (_, packet_type, payload_size)= Packet::parse_header(header_buf)?;
+        let mut payload = Payload::parse_header(header_buf)?;
 
         // Read packet payload
-        let mut payload = vec![0; payload_size as usize];
-        stream.read_exact(&mut payload)?;
-        let packet = Packet::decode_packet(packet_type, Buffer::from(payload))?;
+        let mut packet_content = vec![0; payload.packet_size as usize];
+        stream.read_exact(&mut packet_content)?;
+        payload.decode(Buffer::from(packet_content));
 
-        Ok(packet)
+        Ok(payload)
     }
 
-    pub async fn send(&self, packet: Packet) -> Result<()> {
+    pub async fn send(&self, packet: Box<dyn Packet>) -> Result<()> {
         println!("LOG: send: packet: {:#?}", packet);
+
+        let payload = Payload::from_packet(packet, self.network).unwrap();
+        let encoded = payload.frame(self.network).unwrap().to_vec();
+
         let mut stream = self.stream.lock().await;
-        let encoded = packet.frame(self.network).to_vec();
         // dbg!("Encoded packet being sent:");
         // dbg!(&encoded);
         stream.write_all(&encoded)?;
@@ -397,19 +421,16 @@ impl Peer {
     pub async fn send_version(&self) -> Result<()> {
         //Need to pass in height dynamically. TODO
         //Also need to pass in no_relay dynamically TODO
-        let packet = Packet::Version(VersionPacket::new(self.info.address, 0, false));
+        let packet = VersionPacket::new(self.info.address, 0, false);
         //Each packet might have a different timeout requirement -> We should probably set this in
         //the packet struct itself.
-        self.send(packet).await?;
-
+        self.send(Box::new(packet)).await?;
         Ok(())
     }
 
     pub async fn send_verack(&self) -> Result<()> {
-        let packet = Packet::Verack(VerackPacket::new());
-
-        self.send(packet).await?;
-
+        let packet = VerackPacket::new();
+        self.send(Box::new(packet)).await?;
         Ok(())
     }
 

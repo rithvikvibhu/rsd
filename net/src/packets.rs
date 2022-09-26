@@ -1,7 +1,7 @@
 use crate::common::{MAX_INV, USER_AGENT};
 use crate::net_address::NetAddress;
 use crate::types::{Nonce, ProtocolVersion, Services};
-use crate::Result;
+use crate::{Result, error::Error};
 use chrono::{DateTime, TimeZone, Utc};
 use extended_primitives::Buffer;
 use extended_primitives::Hash;
@@ -10,179 +10,16 @@ use handshake_encoding::{Decodable, Encodable};
 use handshake_primitives::{Block, BlockHeader, Inventory, Transaction};
 use handshake_protocol::network::Network;
 use handshake_types::Bloom;
+use log::debug;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use rand::Rng;
-use std::convert::TryInto;
+use std::convert::{TryInto, TryFrom};
+use std::fmt::Debug;
+use downcast_rs::{DowncastSync, impl_downcast};
 
-//TODO I think we might be able to remove packet types from all of these things, but for now keep
-//them.
-#[derive(Debug, PartialEq, Clone)]
-pub enum Packet {
-    Version(VersionPacket),
-    Verack(VerackPacket),
-    Ping(PingPacket),
-    Pong(PongPacket),
-    GetAddr,
-    Addr(AddrPacket),
-    Inv(InvPacket),
-    GetData,
-    NotFound,
-    GetBlocks(GetBlocksPacket),
-    GetHeaders(GetHeadersPacket),
-    Headers(HeadersPacket),
-    SendHeaders,
-    Block(BlockPacket),
-    Tx(TxPacket),
-    Reject(RejectPacket),
-    Mempool,
-    Unknown(UnknownPacket),
-}
-//   FILTERLOAD: 17,
-//   FILTERADD: 18,
-//   FILTERCLEAR: 19,
-//   MERKLEBLOCK: 20,
-//   FEEFILTER: 21,
-//   SENDCMPCT: 22,
-//   CMPCTBLOCK: 23,
-//   GETBLOCKTXN: 24,
-//   BLOCKTXN: 25,
-//   GETPROOF: 26,
-//   PROOF: 27,
-//   CLAIM: 28,
-//   AIRDROP: 29,
-//   UNKNOWN: 30,
-//   // Internal
-//   INTERNAL: 31,
-//   DATA: 32
 
-impl Packet {
-    pub fn parse_header(mut packet: Buffer) -> Result<(Buffer, u8, u32)> {
-        let _magic = packet.read_u32()?;
-        let payload_type = packet.read_u8()?;
-        let packet_size = packet.read_u32()?;
-
-        //Check magic number, throw packet invalid magic number
-        //Check size, and ensure it's below constant max message size. -> We already have
-        //This checked in Brontide, but I think let's check it again here.
-
-        Ok((packet, payload_type, packet_size))
-    }
-
-    //Function to frame the version packet.
-    pub fn frame(&self, network: Network) -> Buffer {
-        let mut buffer = Buffer::new();
-
-        buffer.write_u32(network.magic());
-        buffer.write_u8(self.packet_type());
-        buffer.write_u32(self.size());
-
-        //Write encoded packet
-        buffer.extend(self.encode());
-
-        buffer
-    }
-
-    pub fn decode(packet: Buffer) -> Result<Self> {
-        let (raw_packet, packet_type, _) = Packet::parse_header(packet)?;
-        return Packet::decode_packet(packet_type, raw_packet);
-    }
-
-    pub fn decode_packet(packet_type: u8, raw_packet: Buffer) -> Result<Self> {
-        match packet_type {
-            0 => Ok(Packet::Version(VersionPacket::decode(raw_packet)?)),
-            1 => Ok(Packet::Verack(VerackPacket::decode(raw_packet)?)),
-            2 => Ok(Packet::Ping(PingPacket::decode(raw_packet)?)),
-            3 => Ok(Packet::Pong(PongPacket::decode(raw_packet)?)),
-            4 => Ok(Packet::GetAddr),
-            5 => {
-                let packet = AddrPacket::decode(raw_packet)?;
-                Ok(Packet::Addr(packet))
-            }
-            6 => {
-                let packet = InvPacket::decode(raw_packet)?;
-                Ok(Packet::Inv(packet))
-            }
-            7 => Ok(Packet::GetData),
-            8 => Ok(Packet::NotFound),
-            9 => {
-                let packet = GetBlocksPacket::decode(raw_packet)?;
-                Ok(Packet::GetBlocks(packet))
-            }
-            _ => {
-                let packet = UnknownPacket::decode(raw_packet)?;
-                Ok(Packet::Unknown(packet))
-            }
-        }
-    }
-
-    pub fn packet_type(&self) -> u8 {
-        match self {
-            Packet::Version(_) => 0,
-            Packet::Verack(_) => 1,
-            Packet::Ping(_) => 2,
-            Packet::Pong(_) => 3,
-            Packet::GetAddr => 4,
-            Packet::Addr(_) => 5,
-            Packet::Inv(_) => 6,
-            Packet::GetData => 7,
-            Packet::NotFound => 8,
-            Packet::GetBlocks(_) => 9,
-            Packet::GetHeaders(_) => 10,
-            Packet::Headers(_) => 11,
-            Packet::SendHeaders => 12,
-            Packet::Block(_) => 13,
-            Packet::Tx(_) => 14,
-            Packet::Reject(_) => 15,
-            Packet::Mempool => 16,
-            // Packet::FilterLoad => 17,
-            // Packet::FilterAdd => 18,
-            // Packet::FilterClear => 19,
-            // Packet::MerkleBlock => 20,
-            // Packet::FeeFilter => 21,
-            // Packet::SendCompact => 22,
-            // Packet::CompactBlock => 23,
-            // Packet::GetBlockTransaction => 24,
-            // Packet::BlockTransaction => 25,
-            // Packet::GetProof => 26,
-            // Packet::Proof => 27,
-            // Packet::Claim => 28,
-            // Packet::Airdrop => 29,
-            Packet::Unknown(_) => 30,
-            // Packet::Internal => 31,
-            // Packet::Data => 32,
-            // _ => 0, // TODO: handle unknown packet type
-        }
-    }
-}
-
-impl Encodable for Packet {
-    fn size(&self) -> u32 {
-        match self {
-            Packet::Version(packet) => packet.size(),
-            Packet::Verack(packet) => packet.size(),
-            Packet::Ping(packet) => packet.size(),
-            Packet::Pong(packet) => packet.size(),
-            _ => 0,
-        }
-    }
-
-    fn encode(&self) -> Buffer {
-        match self {
-            Packet::Version(packet) => packet.encode(),
-            Packet::Verack(packet) => packet.encode(),
-            Packet::Ping(packet) => packet.encode(),
-            Packet::Pong(packet) => packet.encode(),
-            Packet::GetAddr => Buffer::new(),
-            Packet::Addr(packet) => packet.encode(),
-            Packet::Inv(packet) => packet.encode(),
-            Packet::GetData => Buffer::new(),
-            Packet::NotFound => Buffer::new(),
-            Packet::GetBlocks(packet) => packet.encode(),
-            _ => Buffer::new(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, IntoPrimitive, TryFromPrimitive)]
+#[repr(u8)]
 pub enum PacketType {
     Version = 0,
     Verack = 1,
@@ -219,13 +56,131 @@ pub enum PacketType {
     Data = 32,
 }
 
-//Optionally all packets go inside of a Packet enum and we use that to implement frame, which we
-//can remove from peer. Not sure if that's the way we want to go, but this should work for now.
+
+#[derive(Debug)]
+pub struct Payload {
+    pub magic: u32,
+    pub code: PacketType,
+    pub packet_size: u32,
+    pub packet: Option<Box<dyn Packet>>,
+}
+
+impl Payload {
+    pub fn from_packet(packet: Box<dyn Packet>, network: Network) -> Result<Self> {
+        Ok(Payload {
+            magic: network.magic(),
+            code: packet.code(),
+            packet_size: packet.size(),
+            packet: Some(packet),
+        })
+    }
+
+    pub fn parse_header(mut packet: Buffer) -> Result<Self> {
+        let magic = packet.read_u32()?;
+
+        // let payload_type = PacketType::try_from(packet.read_u8()?).unwrap();
+        let payload_type = match PacketType::try_from(packet.read_u8()?) {
+            Ok(p) => p,
+            Err(error) => {
+                debug!("Cannot parse packet type: {}", error);
+                return Err(Error::InvalidPacketType);
+            },
+        };
+
+        let packet_size = packet.read_u32()?;
+
+        //Check magic number, throw packet invalid magic number
+        //Check size, and ensure it's below constant max message size. -> We already have
+        //This checked in Brontide, but I think let's check it again here.
+
+        Ok(
+            Payload {
+                magic,
+                code: payload_type,
+                packet_size,
+                packet: None,
+            }
+        )
+    }
+
+    pub fn decode(&mut self, mut raw_packet: Buffer) {
+        let packet = match self.code {
+            PacketType::Version => VersionPacket::decode(&mut raw_packet),
+            PacketType::Verack => VerackPacket::decode(&mut raw_packet),
+            PacketType::Ping => PingPacket::decode(&mut raw_packet),
+            PacketType::Pong => PongPacket::decode(&mut raw_packet),
+            PacketType::Unknown => UnknownPacket::decode(&mut raw_packet),
+            _ => { Err(Error::InvalidPacketType) },
+        };
+
+        match packet {
+            Ok(packet) => self.packet = Some(packet),
+            Err(error) => debug!("Cannot decode packet: {}", error),
+        }
+    }
+
+    // pub fn decode(packet_type: u8, mut raw_packet: Buffer) -> Result<Self> {
+    //     match packet_type {
+    //         0 => Ok(Self::VersionPacket(VersionPacket::decode(&mut raw_packet)?)),
+    //         1 => Ok(Self::VerackPacket(VerackPacket::decode(&mut raw_packet)?)),
+    //         // 2 => Ok(Packet::Ping(PingPacket::decode(raw_packet)?)),
+    //         // 3 => Ok(Packet::Pong(PongPacket::decode(raw_packet)?)),
+    //         // 4 => Ok(Packet::GetAddr),
+    //         // 5 => {
+    //         //     let packet = AddrPacket::decode(raw_packet)?;
+    //         //     Ok(Packet::Addr(packet))
+    //         // }
+    //         // 6 => {
+    //         //     let packet = InvPacket::decode(raw_packet)?;
+    //         //     Ok(Packet::Inv(packet))
+    //         // }
+    //         // 7 => Ok(Packet::GetData),
+    //         // 8 => Ok(Packet::NotFound),
+    //         // 9 => {
+    //         //     let packet = GetBlocksPacket::decode(raw_packet)?;
+    //         //     Ok(Packet::GetBlocks(packet))
+    //         // }
+    //         _ => Ok(Self::UnknownPacket(UnknownPacket::decode(&mut raw_packet)?)),
+    //     }
+    // }
+
+    pub fn frame(&self, network: Network) -> Result<Buffer> {
+        let mut buffer = Buffer::new();
+
+        match &self.packet {
+            Some(packet) => {
+                // Write payload header
+                buffer.write_u32(network.magic());
+                buffer.write_u8(packet.code().into());
+                buffer.write_u32(packet.size());
+
+                // Write encoded packet
+                buffer.extend(packet.encode());
+
+                Ok(buffer)
+            },
+            None => Err(Error::NoPacket),
+        }
+    }
+}
+
+pub trait Packet: std::fmt::Debug + DowncastSync {
+    // new() ?
+
+    fn code(&self) -> PacketType;
+
+    fn size(&self) -> u32 {
+        0
+    }
+
+    fn encode(&self) -> Buffer;
+    fn decode(buffer: &mut Buffer) -> Result<Box<dyn Packet>> where Self: Sized;
+}
+impl_downcast!(sync Packet);
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VersionPacket {
-    //TODO remove type here, it's implied by the struct.
-    _type: PacketType,
     pub(crate) version: ProtocolVersion,
     pub(crate) services: Services,
     //Check on this.
@@ -238,13 +193,11 @@ pub struct VersionPacket {
     pub(crate) no_relay: bool,
 }
 
-//Make Packet a trait, and have it include functions like size and encode.
 impl VersionPacket {
     pub fn new(addr: NetAddress, height: u32, no_relay: bool) -> Self {
         //TODO we probably want to implement noncelist here.
         let nonce = rand::thread_rng().gen::<[u8; 8]>();
         VersionPacket {
-            _type: PacketType::Version,
             version: ProtocolVersion::default(),
             services: Services::LOCAL_SERVICES,
             time: Utc::now(),
@@ -255,34 +208,13 @@ impl VersionPacket {
             no_relay,
         }
     }
-
-    fn decode(mut packet: Buffer) -> Result<Self> {
-        let version = packet.read_u32()?;
-        let services = packet.read_u32()?;
-        packet.read_u32()?;
-        let timestamp = packet.read_u64()?;
-        let remote = NetAddress::decode(&mut packet)?;
-        let nonce = packet.read_bytes(8)?;
-        let agent_length = packet.read_u8()?;
-        let agent = packet.read_string(agent_length as usize)?;
-        let height = packet.read_u32()?;
-        let no_relay = packet.read_u8()?;
-
-        Ok(VersionPacket {
-            _type: PacketType::Version,
-            version: ProtocolVersion::from(version),
-            services: Services::from_bits_truncate(services),
-            time: Utc.timestamp(timestamp as i64, 0),
-            remote,
-            agent,
-            nonce: Buffer::from(nonce),
-            height,
-            no_relay: no_relay == 1,
-        })
-    }
 }
 
-impl Encodable for VersionPacket {
+impl Packet for VersionPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Version
+    }
+
     fn size(&self) -> u32 {
         let mut size = 0;
         size += 20;
@@ -310,30 +242,48 @@ impl Encodable for VersionPacket {
 
         buffer
     }
+
+    fn decode(mut packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let version = packet.read_u32()?;
+        let services = packet.read_u32()?;
+        packet.read_u32()?;
+        let timestamp = packet.read_u64()?;
+        let remote = NetAddress::decode(&mut packet)?;
+        let nonce = packet.read_bytes(8)?;
+        let agent_length = packet.read_u8()?;
+        let agent = packet.read_string(agent_length as usize)?;
+        let height = packet.read_u32()?;
+        let no_relay = packet.read_u8()?;
+
+        Ok(Box::new(VersionPacket {
+            version: ProtocolVersion::from(version),
+            services: Services::from_bits_truncate(services),
+            time: Utc.timestamp(timestamp as i64, 0),
+            remote,
+            agent,
+            nonce: Buffer::from(nonce),
+            height,
+            no_relay: no_relay == 1,
+        }))
+    }
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VerackPacket {
-    //TODO remove type here, it's implied by the struct.
-    _type: PacketType,
 }
 
-//Make Packet a trait, and have it include functions like size and encode.
 impl VerackPacket {
     pub fn new() -> Self {
-        VerackPacket {
-            _type: PacketType::Verack,
-        }
-    }
-
-    fn decode(mut packet: Buffer) -> Result<Self> {
-        Ok(VerackPacket {
-            _type: PacketType::Verack,
-        })
+        VerackPacket {}
     }
 }
 
-impl Encodable for VerackPacket {
+impl Packet for VerackPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Verack
+    }
+
     fn size(&self) -> u32 {
         0
     }
@@ -341,11 +291,15 @@ impl Encodable for VerackPacket {
     fn encode(&self) -> Buffer {
         Buffer::new()
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(VerackPacket {}))
+    }
 }
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct PingPacket {
-    pub(crate) _type: PacketType,
     //TODO probably make this a custom type. -> I think it's the same nonce as hostname.
     pub(crate) nonce: Nonce,
 }
@@ -353,23 +307,16 @@ pub struct PingPacket {
 impl PingPacket {
     pub fn new(nonce: Nonce) -> Self {
         PingPacket {
-            _type: PacketType::Ping,
             nonce,
         }
     }
-
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-
-        let nonce = packet.read_bytes(8)?;
-
-        Ok(PingPacket {
-            _type: PacketType::Ping,
-            nonce: nonce.try_into().unwrap(),
-        })
-    }
 }
 
-impl Encodable for PingPacket {
+impl Packet for PingPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Ping
+    }
+
     fn size(&self) -> u32 {
         8
     }
@@ -381,33 +328,34 @@ impl Encodable for PingPacket {
 
         buffer
     }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let nonce = packet.read_bytes(8)?;
+        Ok(Box::new(PingPacket {
+            nonce: nonce.try_into().unwrap(),
+        }))
+    }
 }
+
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct PongPacket {
-    _type: PacketType,
     pub(crate) nonce: Nonce,
 }
 
 impl PongPacket {
     pub fn new(nonce: Nonce) -> Self {
         PongPacket {
-            _type: PacketType::Pong,
             nonce,
         }
     }
-
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let nonce = packet.read_bytes(8)?;
-
-        Ok(PongPacket {
-            _type: PacketType::Pong,
-            nonce: nonce.try_into().unwrap(),
-        })
-    }
 }
 
-impl Encodable for PongPacket {
+impl Packet for PongPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Pong
+    }
+
     fn size(&self) -> u32 {
         8
     }
@@ -419,17 +367,13 @@ impl Encodable for PongPacket {
 
         buffer
     }
-}
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct AddrPacket {
-    _type: PacketType,
-    items: Vec<NetAddress>,
-}
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        let nonce = packet.read_bytes(8)?;
 
-impl AddrPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        let count = packet.read_varint()?;
+        Ok(Box::new(PongPacket {
+            nonce: nonce.try_into().unwrap(),
+        }))
         //TODO would it be faster to initalize with capacity here? since we know the count.
         let mut items = Vec::new();
         for _ in 0..count.to_u64() {
@@ -860,25 +804,25 @@ impl Encodable for RejectPacket {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnknownPacket {
-    pub(crate) _type: PacketType,
     data: Buffer,
 }
 
-impl UnknownPacket {
-    pub fn decode(mut packet: Buffer) -> Result<Self> {
-        Ok(UnknownPacket {
-            _type: PacketType::Unknown,
-            data: packet,
-        })
+impl Packet for UnknownPacket {
+    fn code(&self) -> PacketType {
+        PacketType::Unknown
     }
-}
 
-impl Encodable for UnknownPacket {
     fn size(&self) -> u32 {
         self.data.len() as u32
     }
 
     fn encode(&self) -> Buffer {
         self.data.clone()
+    }
+
+    fn decode(packet: &mut Buffer) -> Result<Box<dyn Packet>> {
+        Ok(Box::new(UnknownPacket {
+            data: packet.clone(),
+        }))
     }
 }

@@ -22,6 +22,8 @@ pub enum Error {
     InvalidIdentityKey,
     InvalidNetAddress,
     DuplicateVersion,
+    NoPacket,
+    InvalidPacketType,
 }
 
 impl From<brontide::Error> for Error {
@@ -74,6 +76,8 @@ impl fmt::Display for Error {
             Error::InvalidNetAddress => write!(f, "Invalid Network Address"),
             Error::DuplicateVersion => write!(f, "Peer sent a duplicate version."),
             Error::LockError => write!(f, "Lock error"),
+            Error::NoPacket => write!(f, "No packet"),
+            Error::InvalidPacketType => write!(f, "Invalid Packet Type"),
         }
     }
 }

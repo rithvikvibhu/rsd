@@ -13,7 +13,7 @@ use crate::NetAddress;
 use handshake_protocol::network::Network;
 use futures::channel::mpsc::{UnboundedReceiver, unbounded, UnboundedSender};
 use futures::stream::StreamExt;
-use crate::packets::Packet;
+use crate::packets::{Packet, Payload};
 
 //TODO cleanup imports
 // use crate::blockchain::chain::Chain;
@@ -36,8 +36,8 @@ pub struct Pool {
     config: PoolConfig,
     connected: bool,
     store: Arc<PeerStore>,
-    rx: Arc<Mutex<UnboundedReceiver<Packet>>>,
-    tx: UnboundedSender<Packet>,
+    rx: Arc<Mutex<UnboundedReceiver<Payload>>>,
+    tx: UnboundedSender<Payload>,
     // connected_groups: Mutex<Vec<Vec<u8>>>
 }
 
